@@ -1,0 +1,203 @@
+---
+title: "615-Midterm"
+author: "Qiuyuan Qin"
+date: "2016Äê10ÔÂ20ÈÕ"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## This project was supported by Yue Ren.
+
+```{r,echo=FALSE}
+library(tidyr)
+library(plyr)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(data.table)
+library(scales)
+library(maps)
+```
+
+## County-level oil and gas production
+```{r}
+oilgascounty <- read.csv("C:/Users/asus/Downloads/oilgascounty.csv")
+```
+
+### 1. Data summary and introduction
+#### (a). Summary 
+```{r}
+dim(oilgascounty)
+head(oilgascounty)
+colSums(is.na(oilgascounty)) #  check for whole cols filled with NA - variables without data
+summary(oilgascounty)
+```
+#### (b). Introduction the meanings of variables
+State oil and gas production statistics were used to create a database of annual county-level production for 2000 through 2011. Data are available for onshore production in the lower 48 States only. Raw data for natural gas is for gross withdrawals, and oil data include natural gas liquids except for Colorado where the State reported them as natural gas withdrawals. Note that State-reported natural gas withdrawals were not available for Illinois or Indiana; these estimates were produced using geocoded wells and State total production reported by the EIA.
+
+Using this method, 920 counties in 31 States are identified with some natural gas production occurring (in 2011), and 980 counties in 30 States are identified with some onshore oil production (in 2011), see the maps below.
+
+Counties with increases or decreases in excess of $20 million in oil and/or natural gas production during 2000-11 are also identified (see map). To convert amounts to values, ERS researchers took annual national prices for oil (EIA first-purchase price) and gas (EIA wellhead price) for 2000 and 2011, converted them to 2011 dollars, and then took the average over the period. This method yields a natural gas price of $5.80 per 1,000 cubic foot (Mcf) and an oil price of $57.90 per barrel, which is then applied to the county-level change in production over the 2000-11 period. Counties with $20 million or more gain/decline in the value of production are thus identified.
+```{r,echo=FALSE}
+# Explanation 
+variables <- matrix(c("Five-digit Federal Information Processing Standard (FIPS) code (numeric)","FIPS code with leading zero (string)","State abbreviation (string)","County name (string)","Rural-urban Continuum Code, 2013 ","Urban Influence Code, 2013 ","Metro-nonmetro indicator 2013 (0=nonmetro, 1=metro)","Metro-Micro-Noncore indicator 2013 (0=nonmetro noncore, 1=nonmetro micropolitan, 2=metropolitan)","Annual gross withdrawals (barrels) of crude oil, for the year specified in the variable name (2000 through 2011)","Annual gross withdrawals (1,000 cubic feet) of natural gas, for the year specified in the variable name (2000 through 2011)","Categorical variable based upon change in the dollar value of oil production, 2000-11. Values are H_Growth (>=$20 million), H_Decline (<=-$20 million), Status Quo (change between +/- $20 million)","Categorical variable based upon change in the dollar value of natural gas production, 2000-11. Values are H_Growth (>=$20 million), H_Decline (<=-$20 million), Status Quo (change between +/- $20 million)","Categorical variable based on the change in the dollar value of the sum of oil and natural gas production, 2000-11. Values are H_Growth (>=$20 million), H_Decline (<=-$20 million), Status Quo (change between +/- $20 million)"))
+
+rownames(variables) <- c("FIPS","geoid","Stabr","County_Name","Rural_Urban_Continuum_Code_2013	","Urban_Influence_2013","Metro_Nonmetro_2013","Metro_Micro_Noncore_2013","oil2000, oil2001, ..., oil2011","gas2000, gas2001, ..., gas2011","oil_change_group","gas_change_group","oil_gas_change_group")
+
+colnames(variables) <- c("Description and Value Labels")
+table_var <- as.table(variables)
+table_var
+```
+### 2.Clean the data
+#### (a). Natural gas and oil production in the lower 48 states, by metropolitan status, 2000-2011
+split this dataset into 2 subset
+```{r}
+# gas production
+gas <- subset(oilgascounty,select = c(County_Name,Metro_Micro_Noncore_2013,
+ Stabr,gas2000:gas2011))
+```
+
+```{r}
+# oil production
+oil<-subset(oilgascounty,select = c(geoid:Metro_Micro_Noncore_2013,
+oil2000:oil2011,oil_change_group:oil_gas_change_group))
+```
+
+clean data
+```{r}
+
+gas<-melt(gas,id.vars = c("County_Name","Stabr","Metro_Micro_Noncore_2013"),variable.name = "year",value.name="gas")
+gas$year<-substr(gas$year,4,7)
+```
+
+```{r}
+oil<-melt(oil,id.vars =  c("geoid","Stabr","County_Name","Rural_Urban_Continuum_Code_2013","Urban_Influence_2013","Metro_Nonmetro_2013","Metro_Micro_Noncore_2013","oil_change_group","gas_change_group","oil_gas_change_group"),
+          variable.name = "year",value.name="oil")
+oil$year<-substr(oil$year,4,7)
+```
+
+oil_gas_group change
+```{r}
+oilgasgroup<-function(x){
+  for(i in 1:length(x)){
+    if(x[i]=="H_Growth"){
+      x[i]<-">=20"
+    }else if(x[i]=="H_Decline"){
+      x[i]<-"<=-20"
+    }else{
+      x[i]<-"-20/+20"
+    }
+  }
+  i=i+1
+  return(x)
+}
+
+oil$oil_change_group<-as.character(oil$oil_change_group)
+oil$oil_change_group<-oilgasgroup(oil$oil_change_group)
+
+oil$gas_change_group<-as.character(oil$gas_change_group)
+oil$gas_change_group<-oilgasgroup(oil$gas_change_group)
+
+oil$oil_gas_change_group<-as.character(oil$oil_gas_change_group)
+oil$oil_gas_change_group<-oilgasgroup(oil$oil_gas_change_group)
+
+```
+
+Whole tidy data
+```{r}
+oilgastidy<- join(oil,gas)
+oilgastidy$gas<-gas$gas
+
+head(oilgastidy)
+```
+
+
+### 3.Plot
+```{r}
+#total oil indifferent state and different year
+oil<-data.table(oil)
+stabroil<-oil[,sum(oil),by=list(year,Metro_Micro_Noncore_2013)]
+head(stabroil)
+#total gas indifferent state and different year
+gas<-data.table(gas)
+stabrgas<-gas[,sum(gas),by=list(year,Metro_Micro_Noncore_2013)]
+head(stabrgas)
+```
+
+
+#### From 2000 to 2011, onshore gross withdrawals of natural gas in the lower 48 States increased by about 47 percent, reaching historic highs in every year after 2006. Over the same period, withdrawals of oil increased by 11 percent, with much of that growth occurring between 2007 and 2011. Rural counties (nonmetro noncore) accounted for almost all of the growth in oil production and a large share of the growth in gas production. For natural gas, several metropolitan areas¡ªnotably the Fort Worth area in Texas¡ªalso contributed to the growth in production. County-level indicators of the degree of rurality are included in the data file.
+```{r}
+#plot 
+# gas
+stabrgas<-data.table(stabrgas)
+stabrgas$V1<-stabrgas$V1/10^6
+ggplot(stabrgas,aes(x=year,y=V1))+
+  geom_line(aes(color=factor(Metro_Micro_Noncore_2013),group=Metro_Micro_Noncore_2013),lwd=2)+
+  ylab("gas")+geom_smooth()+ggtitle("Nature gas by metropolitan status(cubic feet(billion))")
+
+#oil
+stabroil<-data.table(stabroil)
+stabroil$V1<-stabroil$V1/10^6
+ggplot(stabroil,aes(x=year,y=V1))+
+  geom_line(aes(color=factor(Metro_Micro_Noncore_2013),group=Metro_Micro_Noncore_2013),lwd=2)+
+  ylab("oil")+geom_smooth()+ggtitle("Nature oil by metropolitan status(cubic feet(billion))")
+```
+
+### 4.Barplots
+
+#### Gas
+#### We aggregate the gas production from year 2000-2011 by different Urban influence level.
+```{r}
+gas_2 <- subset(oilgascounty,select=c(County_Name, Stabr,Urban_Influence_2013,gas2000:gas2011,gas_change_group))
+
+gas_2<-melt(gas_2,id.vars = c("County_Name","Stabr","Urban_Influence_2013","gas_change_group"),variable.name = "year",value.name="gas")
+
+gas_2 <- data.table(gas_2)
+stabrgas_2<-aggregate(as.numeric(gas_2$gas),by=list(gas_2$Urban_Influence_2013),FUN=sum)
+head(stabrgas_2)
+```
+
+```{r}
+q <- ggplot(stabrgas_2,aes(x=Group.1,y=x))+
+  geom_bar(stat="identity",width=0.4,aes(color=factor(Group.1),group=Group.1),lwd=2)+xlab("Urban_influence level")+
+  ylab("gas")+ggtitle("Nature gas production")
+
+q <- q+scale_y_continuous(labels = function(x)x/1000000)+theme(axis.title=element_text(size = 10))
+q
+```
+#### Oil
+#### We aggregate the oil production from year 2000-2011 by different Urban influence level.
+```{r}
+oil_2 <- subset(oilgascounty,select=c(County_Name, Stabr,Urban_Influence_2013,oil2000:oil2011,gas_change_group))
+
+oil_2 <- melt(oil_2,id.vars =c("County_Name","Stabr","Urban_Influence_2013","gas_change_group"),variable.name = "year",value.name="oil")
+
+oil_2 <- data.table(oil_2)
+stabroil_2<-aggregate(as.numeric(oil_2$oil),by=list(oil_2$Urban_Influence_2013),FUN=sum)
+head(stabroil_2)
+```
+
+```{r}
+p <- ggplot(stabroil_2,aes(x=Group.1,y=x))+
+  geom_bar(stat="identity",width=0.4,aes(color=factor(Group.1),group=Group.1),lwd=2)+xlab("Urban_influence level")+
+  ylab("oil")+ggtitle("Nature oil production")
+
+p <- p+scale_y_continuous(labels = function(x)x/1000000)+theme(axis.title=element_text(size = 10))
+p
+```
+
+### 5.Barplots by states
+```{r}
+oil <- data.table(oil)
+gas <- data.table(gas)
+stateoil<-oil[,mean(oil),by=list(Stabr)]
+stategas<-gas[,mean(gas),by=list(Stabr)]
+
+
+ggplot(stateoil,aes(x=Stabr,y=V1/10^3))+geom_bar(stat="identity",fill=heat.colors(49))+ylab("mean oil")+xlab("state")+ggtitle("mean oil in different state")
+ggplot(stategas,aes(x=Stabr,y=V1/10^3))+geom_bar(stat="identity",fill=heat.colors(49))+ylab("mean gas")+xlab("state")+ggtitle("mean gas in different state")
+```
+
+
